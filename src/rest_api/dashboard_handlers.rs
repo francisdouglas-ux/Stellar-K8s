@@ -16,17 +16,10 @@ use crate::crd::{NodeType, StellarNetwork, StellarNode, StellarNodeSpec};
 use crate::rest_api::auth::RequestIdentity;
 
 use super::dashboard_dto::{
-    CapacityPlanningResponse, ConditionDisplay, ConfigDriftResponse, ConfigImpactResponse,
-    DRStatusResponse, DashboardOverview, LogAnalyticsResponse, LogPatternDto, MetricsSummary,
-    NetworkBreakdown, NodeAction, NodeActionRequest, NodeActionResponse, NodeConditionsResponse,
-    NodeLogsResponse, NodeTypeBreakdown, OperatorLogsResponse, SecurityPostureResponse,
-    WhatIfRequest,
-    CapacityPlanningResponse, ConditionDisplay, ConfigImpactResponse, DashboardOverview,
-    LogAnalyticsResponse, LogPatternDto, MetricsSummary, NetworkBreakdown, NodeAction,
-    NodeActionRequest, NodeActionResponse, NodeConditionsResponse, NodeLogsResponse,
+    CapacityPlanningResponse, ConditionDisplay, ConfigImpactResponse, DRStatusResponse,
+    DashboardOverview, LogAnalyticsResponse, LogPatternDto, MetricsSummary, NetworkBreakdown,
+    NodeAction, NodeActionRequest, NodeActionResponse, NodeConditionsResponse, NodeLogsResponse,
     NodeTypeBreakdown, OperatorLogsResponse, SecurityPostureResponse, WhatIfRequest,
-    NodeTypeBreakdown, OperatorLogsResponse, SecurityPostureResponse,
-    CapacityPlanningResponse, WhatIfRequest, DRStatusResponse,
 };
 use super::dto::ErrorResponse;
 
@@ -95,7 +88,7 @@ pub async fn log_analytics(
 
 /// Analyze configuration impact
 pub async fn analyze_config_impact(
-    State(state): State<Arc<ControllerState>>,
+    State(_state): State<Arc<ControllerState>>,
     Json(new_spec): Json<StellarNodeSpec>,
 ) -> Json<ConfigImpactResponse> {
     // For impact analysis, we'd ideally compare against the current spec.
@@ -159,37 +152,6 @@ pub async fn run_what_if(
     Json(analyzer.analyze_scenario(&req.scenario_name, req.scale_factor))
 }
 
-/// Dashboard metrics summary for all nodes
-#[instrument(skip(state))]
-pub async fn dashboard_metrics(
-    State(state): State<Arc<ControllerState>>,
-) -> Result<Json<Vec<MetricsSummary>>, (StatusCode, Json<ErrorResponse>)> {
-    let api: Api<StellarNode> = Api::all(state.client.clone());
-
-    match api.list(&Default::default()).await {
-        Ok(nodes) => {
-            let summaries: Vec<MetricsSummary> = nodes
-                .items
-                .iter()
-                .map(|node| MetricsSummary {
-                    namespace: node.namespace().unwrap_or_else(|| "default".to_string()),
-                    name: node.name_any(),
-                    ledger_sequence: node.status.as_ref().and_then(|s| s.ledger_sequence),
-                    ready_replicas: node.status.as_ref().map(|s| s.ready_replicas).unwrap_or(0),
-                    replicas: node.spec.replicas,
-                    quorum_fragility: node.status.as_ref().and_then(|s| s.quorum_fragility),
-                })
-                .collect();
-            Ok(Json(summaries))
-        }
-        Err(e) => {
-            error!("Failed to list nodes for metrics: {:?}", e);
-            Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::new("list_failed", &e.to_string())),
-            ))
-        }
-    }
 /// Get real-time traffic shaping dashboard metrics.
 pub async fn traffic_dashboard(
     State(_state): State<Arc<ControllerState>>,
@@ -291,44 +253,6 @@ pub async fn dashboard_overview(
                 Json(ErrorResponse::new(
                     "dashboard_failed",
                     &format!("Failed to fetch dashboard data: {e}"),
-                )),
-            ))
-        }
-    }
-}
-
-/// Get metrics summary for all nodes.
-#[instrument(skip(state))]
-pub async fn dashboard_metrics(
-    State(state): State<Arc<ControllerState>>,
-) -> Result<Json<Vec<MetricsSummary>>, (StatusCode, Json<ErrorResponse>)> {
-    let api: Api<StellarNode> = Api::all(state.client.clone());
-
-    match api.list(&Default::default()).await {
-        Ok(nodes) => {
-            let mut summaries = Vec::with_capacity(nodes.items.len());
-            for node in nodes.items {
-                let namespace = node.namespace().unwrap_or_else(|| "default".to_string());
-                let name = node.name_any();
-                let status = node.status.as_ref();
-                summaries.push(MetricsSummary {
-                    namespace,
-                    name,
-                    ledger_sequence: status.and_then(|s| s.ledger_sequence),
-                    ready_replicas: status.map(|s| s.ready_replicas).unwrap_or(0),
-                    replicas: status.map(|s| s.replicas).unwrap_or(0),
-                    quorum_fragility: status.and_then(|s| s.quorum_fragility),
-                });
-            }
-            Ok(Json(summaries))
-        }
-        Err(e) => {
-            error!("Failed to list nodes for dashboard metrics: {e:?}");
-            Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::new(
-                    "dashboard_metrics_failed",
-                    &format!("Failed to fetch dashboard metrics: {e}"),
                 )),
             ))
         }
@@ -753,6 +677,65 @@ pub async fn get_operator_logs(
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse::new("list_pods_failed", &e.to_string())),
+            ))
+        }
+    }
+}
+
+/// Get dashboard metrics summary
+#[instrument(skip(state))]
+pub async fn dashboard_metrics(
+    State(state): State<Arc<ControllerState>>,
+) -> Result<Json<MetricsSummary>, (StatusCode, Json<ErrorResponse>)> {
+    // Return aggregated metrics across all nodes
+    let api: Api<StellarNode> = Api::all(state.client.clone());
+
+    match api.list(&Default::default()).await {
+        Ok(nodes) => {
+            let mut total_replicas = 0;
+            let mut total_ready_replicas = 0;
+            let mut latest_ledger = None;
+            let mut avg_quorum_fragility = 0.0;
+            let mut fragility_count = 0;
+
+            for node in &nodes.items {
+                if let Some(status) = &node.status {
+                    total_replicas += status.replicas;
+                    total_ready_replicas += status.ready_replicas;
+
+                    if let Some(ledger) = status.ledger_sequence {
+                        latest_ledger = Some(latest_ledger.map_or(ledger, |l: u64| l.max(ledger)));
+                    }
+
+                    if let Some(fragility) = status.quorum_fragility {
+                        avg_quorum_fragility += fragility;
+                        fragility_count += 1;
+                    }
+                }
+            }
+
+            if fragility_count > 0 {
+                avg_quorum_fragility /= fragility_count as f64;
+            }
+
+            Ok(Json(MetricsSummary {
+                namespace: "all".to_string(),
+                name: "cluster".to_string(),
+                ledger_sequence: latest_ledger,
+                ready_replicas: total_ready_replicas,
+                replicas: total_replicas,
+                quorum_fragility: if fragility_count > 0 {
+                    Some(avg_quorum_fragility)
+                } else {
+                    None
+                },
+            }))
+        }
+        Err(e) => {
+            error!("Failed to get dashboard metrics: {:?}", e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new("metrics_failed", &e.to_string())),
             ))
         }
     }

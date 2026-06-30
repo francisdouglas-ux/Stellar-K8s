@@ -91,7 +91,6 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
                     external_dns: None,
                     known_peers: None,
                     quorum_optimization: None,
-                    ..Default::default()
                 }),
                 horizon_config: None,
                 soroban_config: None,
@@ -338,8 +337,11 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
         }
     }
 
-    /// Helper function to create a dummy client for tests without kubeconfig
-    #[allow(dead_code)]
+    /// Helper function to create a dummy client for tests without kubeconfig.
+    /// Panics intentionally — used only to document the expected usage pattern
+    /// for tests that require a real client. Suppress the dead-code warning
+    /// because this is a test-only sentinel.
+    #[allow(dead_code)] // test sentinel — documents client requirement for kubeconfig-gated tests
     fn create_dummy_client() -> Client {
         // For tests that don't actually call Kubernetes APIs, we skip client creation
         // In a real test environment, you would use a mock server or test cluster
@@ -864,7 +866,9 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
             apply_phase_conditions(&mut conditions, &phase, message.as_deref());
 
             let ready = condition_status(&conditions, crate::controller::conditions::CONDITION_TYPE_READY);
+            let available = condition_status(&conditions, crate::controller::conditions::CONDITION_TYPE_AVAILABLE);
             prop_assert!(ready.is_some());
+            prop_assert!(available.is_some());
 
             match phase.as_str() {
                 "Ready" | "Running" => {
@@ -906,6 +910,10 @@ VALIDATORS=["VALIDATOR1", "VALIDATOR2"]"#
 
             prop_assert_eq!(
                 condition_status(&conditions, crate::controller::conditions::CONDITION_TYPE_READY),
+                Some(crate::controller::conditions::CONDITION_STATUS_UNKNOWN)
+            );
+            prop_assert_eq!(
+                condition_status(&conditions, crate::controller::conditions::CONDITION_TYPE_AVAILABLE),
                 Some(crate::controller::conditions::CONDITION_STATUS_UNKNOWN)
             );
         }

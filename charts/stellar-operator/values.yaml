@@ -1,9 +1,27 @@
-# Default values for stellar-operator
-# This is a YAML-formatted file.
+# =============================================================================
+# Stellar Operator — default Helm values
+# =============================================================================
+#
+# Override precedence (highest wins):
+#   1. Per-release `helm install -f` / `--set` overrides
+#   2. Nested keys in this file (e.g. operator.logLevel)
+#   3. Chart defaults (image.tag falls back to Chart.appVersion when empty)
+#
+# Component images inherit from `image.*` when their repository/tag are empty:
+#   sidecar, forkDetector, byzantineWatcher, scpAnalytics, otel.collector
+#
+# Preset profiles: examples/values-production.yaml, values-ha.yaml
+# =============================================================================
 
+# --- Core operator deployment ------------------------------------------------
+# For high availability, set to 3 or more.
+# Requires enabling leader election (configured automatically if replicaCount > 1).
+# With leader election enabled, only one replica processes reconciliation at a time,
+# and failover occurs automatically if the leader becomes unavailable.
 replicaCount: 1
 
 image:
+  # Primary operator image; sub-components inherit these when repository/tag are empty.
   repository: ghcr.io/stellar/stellar-k8s
   pullPolicy: Always
   # Overrides the image tag whose default is the chart appVersion
@@ -158,8 +176,14 @@ arch: ""
 #     effect: "NoSchedule"
 
 # PodDisruptionBudget configuration for operator deployment
+# Recommended to enable when running multiple replicas for high availability.
+# This ensures at least one operator replica remains available during maintenance.
 podDisruptionBudget:
   enabled: false
+  # Minimum number of available pods (set to 1 for HA with 3+ replicas)
+  minAvailable: 1
+  # Maximum number of unavailable pods
+  maxUnavailable: null
 
 # Operator configuration
 operator:
@@ -224,6 +248,45 @@ service:
   restApiPort: 9090
   metricsPort: 9090
 
+# Prometheus Operator monitoring integration — ServiceMonitor, PodMonitor,
+# PrometheusRule (Stellar node-health alerts), and Grafana dashboard ConfigMaps.
+# Requires the Prometheus Operator CRDs (monitoring.coreos.com/v1) on the cluster.
+monitoring:
+  # Master switch. Set to true to deploy any monitoring resources below.
+  enabled: false
+
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+
+  # PodMonitor for direct (Service-less) pod scraping, e.g. operator-managed
+  # StellarNode pods that don't have a dedicated Service.
+  podMonitor:
+    enabled: false
+    interval: 30s
+    portName: metrics
+    labels: {}
+    selector:
+      matchExpressions:
+        - key: stellar.org/node-type
+          operator: Exists
+
+  prometheusRule:
+    enabled: true
+    labels: {}
+    ingestionLagThresholdSeconds: 30
+    ledgerCloseTimeThresholdSeconds: 10
+    # Extra PrometheusRule rule groups, appended as-is under spec.groups[0].rules.
+    additionalRules: []
+
+  grafanaDashboards:
+    enabled: true
+    # Standard label used by the Grafana sidecar dashboard-loader to auto-discover ConfigMaps.
+    labels:
+      grafana_dashboard: "1"
+
 # Default resource requests/limits for managed StellarNode pods.
 # Precedence: StellarNode spec.resources > Helm defaults > operator hardcoded fallback.
 # These are written into a ConfigMap that the operator reads at startup.
@@ -249,7 +312,6 @@ defaultResources:
     limits:
       cpu: "4"
       memory: "8Gi"
-      
 
 # Feature flags — toggle operator capabilities at runtime without restart.
 featureFlags:
@@ -259,7 +321,6 @@ featureFlags:
   enablePeerDiscovery: true
   enableArchiveHealth: true
   enableSorobanMetrics: false
-
 
 security:
   audit:
@@ -294,6 +355,9 @@ security:
 #        kubectl label namespace stellar-testnet stellar.org/network=testnet
 #   2. Set networkIsolation.enabled=true and list the namespaces below.
 #   3. Helm upgrade.
+#
+# Ready-to-apply policy templates and testing guidance are documented in
+# docs/network-policy-templates.md.
 networkIsolation:
   # Master switch. Set to true to deploy namespace-level isolation policies.
   enabled: false
@@ -352,8 +416,8 @@ byzantineWatcher:
   # Container image for the watcher binary.
   # Defaults to the same image as the operator (stellar-watcher binary is included).
   image:
-    repository: ""   # defaults to .Values.image.repository
-    tag: ""          # defaults to .Values.image.tag / chart appVersion
+    repository: "" # defaults to .Values.image.repository
+    tag: "" # defaults to .Values.image.tag / chart appVersion
     pullPolicy: IfNotPresent
 
   # Default Stellar network for all watchers (can be overridden per region).
@@ -474,7 +538,6 @@ otel:
         endpoint: "http://elasticsearch:9200"
         index: "stellar-logs"
 
-
 # SCP Analytics Pipeline Configuration
 # Real-time streaming of SCP messages to Kafka for network topology analysis
 scpAnalytics:
@@ -513,7 +576,7 @@ scpAnalytics:
     # SASL authentication (optional)
     sasl:
       enabled: false
-      mechanism: "PLAIN"  # PLAIN, SCRAM-SHA-256, SCRAM-SHA-512
+      mechanism: "PLAIN" # PLAIN, SCRAM-SHA-256, SCRAM-SHA-512
       username: ""
       password: ""
 
@@ -559,3 +622,69 @@ scpAnalytics:
       requests:
         cpu: 200m
         memory: 256Mi
+
+# --- Admission webhook deployment settings -----------------------------------
+# Controls the webhook Deployment, Service, and ValidatingWebhookConfiguration
+# rendered by charts/stellar-operator/templates/webhook.yaml.
+webhook:
+  # Number of webhook server replicas. Set to >= 2 for production HA.
+  replicaCount: 2
+
+  # Port the webhook HTTPS server listens on inside the container.
+  port: 8443
+
+  # Port for the Prometheus /metrics endpoint on the webhook pod.
+  metricsPort: 9090
+
+  # Admission review timeout in seconds. Kubernetes maximum is 30.
+  timeoutSeconds: 10
+
+  # Action when the webhook is unreachable: Fail (safe default) or Ignore.
+  # Fail: admission is blocked if the webhook cannot be reached.
+  # Ignore: admission proceeds without the webhook response.
+  failurePolicy: Fail
+
+  # Resource requests and limits for the webhook server container.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# --- Helm lifecycle hooks ----------------------------------------------------
+hooks:
+  # Pre-install hook — validation checks before first installation.
+  preInstall:
+    enabled: true
+
+  # Pre-upgrade hook — safety checks and upgrade checkpoint before chart upgrade.
+  preUpgrade:
+    enabled: true
+    # Verify a previous Helm revision exists so rollback remains possible.
+    enableRollbackCheck: true
+
+# --- High availability reference ---------------------------------------------
+# ============================================================================
+# HIGH AVAILABILITY CONFIGURATION EXAMPLE
+# ============================================================================
+# To deploy the operator in HA mode with leader election, use the following
+# configuration values in your values-ha.yaml or pass them to helm:
+#
+# replicaCount: 3
+# podDisruptionBudget:
+#   enabled: true
+#   minAvailable: 1
+#
+# This configuration will:
+# 1. Deploy 3 operator replicas
+# 2. Automatically enable leader election via Lease-based coordination
+# 3. Only one replica processes reconciliation at a time
+# 4. If the leader becomes unavailable, a follower takes over within ~20s
+# 5. PodDisruptionBudget ensures at least 1 replica remains during maintenance
+# 6. Pod anti-affinity spreads replicas across different nodes
+#
+# Deploy with:
+#   helm install stellar-operator ./charts/stellar-operator -f values-ha.yaml
+# ============================================================================

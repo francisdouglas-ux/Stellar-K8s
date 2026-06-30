@@ -77,7 +77,7 @@ kubectl label namespace stellar-mainnet stellar.org/network=mainnet
 kubectl label namespace stellar-testnet stellar.org/network=testnet
 ```
 
-Or via Helm (see [Helm Configuration](#helm-configuration) below).
+Or via Helm (see [Helm Configuration](#helm-configuration-reference) below).
 
 ---
 
@@ -138,6 +138,8 @@ When `spec.networkPolicy.enabled: true` on a `StellarNode`, the reconciler creat
 **Source:** `charts/stellar-operator/templates/network-isolation.yaml`
 
 These policies apply to **all pods** in the namespace, not just Stellar pods. They act as a backstop if a per-node policy is accidentally deleted.
+
+For ready-to-apply examples covering validator isolation, API protection, database access, cross-namespace communication, and external access, see [Network Policy Templates](./network-policy-templates.md).
 
 For each Mainnet namespace:
 - `deny-non-mainnet-ingress` — drops ingress from any namespace not labelled `stellar.org/network=mainnet`
@@ -233,7 +235,7 @@ metadata:
   namespace: stellar-mainnet
 spec:
   nodeType: Validator
-  network: Mainnet
+  network: mainnet
   networkPolicy:
     enabled: true                        # required to activate per-node policy
     allowNamespaces:                     # additional namespaces allowed in

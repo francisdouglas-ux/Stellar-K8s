@@ -28,7 +28,7 @@ impl SecretSynchronizer {
         config: &SecretPolicySyncConfig,
         secret_name: &str,
         namespace: &str,
-        encrypted_data: &[u8],
+        _encrypted_data: &[u8],
         version: u32,
         encrypt_in_transit: bool,
     ) -> Result<Vec<ClusterSyncStatus>> {
@@ -78,7 +78,10 @@ impl SecretSynchronizer {
                     actual = s.version,
                     "Secret sync drift detected"
                 );
-                format!("{}: version {} != primary {}", s.cluster, s.version, primary_version)
+                format!(
+                    "{}: version {} != primary {}",
+                    s.cluster, s.version, primary_version
+                )
             })
             .collect()
     }
@@ -95,16 +98,10 @@ mod tests {
             sync_interval: "5m".to_string(),
             conflict_resolution: SyncConflictResolution::PrimaryWins,
         };
-        let statuses = SecretSynchronizer::sync(
-            &config,
-            "validator-seed",
-            "stellar",
-            b"encrypted",
-            3,
-            true,
-        )
-        .await
-        .unwrap();
+        let statuses =
+            SecretSynchronizer::sync(&config, "validator-seed", "stellar", b"encrypted", 3, true)
+                .await
+                .unwrap();
         assert_eq!(statuses.len(), 2);
         assert!(statuses.iter().all(|s| s.synced));
     }

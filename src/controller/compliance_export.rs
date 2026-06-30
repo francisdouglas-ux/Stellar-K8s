@@ -293,8 +293,7 @@ pub fn export_pdf(
         if current_y < 20.0 {
             break;
         }
-        layer.use_text(format!("  {action}: {count}"), 9.0, Mm(15.0), Mm(y), &font);
-        y -= 6.0;
+
         layer.use_text(
             format!("  {action}: {count}"),
             9.0,
@@ -429,7 +428,7 @@ mod tests {
     #[test]
     fn export_json_is_valid_and_signed() {
         let entries = sample_entries();
-        let bytes = export_json(&entries).expect("export_json failed");
+        let bytes = export_json(&entries, None).expect("export_json failed");
 
         let envelope: SignedExport =
             serde_json::from_slice(&bytes).expect("envelope not valid JSON");
@@ -467,7 +466,7 @@ mod tests {
 
     #[test]
     fn export_json_empty_entries() {
-        let bytes = export_json(&[]).expect("export_json failed on empty");
+        let bytes = export_json(&[], None).expect("export_json failed on empty");
         let envelope: SignedExport = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(envelope.payload.entries.len(), 0);
         assert_eq!(envelope.payload.summary.total_actions, 0);
@@ -477,7 +476,7 @@ mod tests {
     fn export_json_tamper_detection() {
         use ed25519_dalek::{Signature, VerifyingKey};
 
-        let bytes = export_json(&sample_entries()).unwrap();
+        let bytes = export_json(&sample_entries(), None).unwrap();
         let mut envelope: SignedExport = serde_json::from_slice(&bytes).unwrap();
 
         // Tamper with the payload
@@ -511,7 +510,7 @@ mod tests {
 
     #[test]
     fn export_pdf_produces_pdf_bytes() {
-        let bytes = export_pdf(&sample_entries()).expect("export_pdf failed");
+        let bytes = export_pdf(&sample_entries(), None).expect("export_pdf failed");
         // PDF files start with the magic bytes %PDF
         assert!(bytes.starts_with(b"%PDF"), "output is not a PDF");
         assert!(bytes.len() > 1024, "PDF is suspiciously small");
@@ -519,7 +518,7 @@ mod tests {
 
     #[test]
     fn export_pdf_empty_entries() {
-        let bytes = export_pdf(&[]).expect("export_pdf failed on empty");
+        let bytes = export_pdf(&[], None).expect("export_pdf failed on empty");
         assert!(bytes.starts_with(b"%PDF"));
     }
 }

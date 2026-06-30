@@ -124,6 +124,16 @@ mod stellar_node_spec_validation {
         }
     }
 
+    #[test]
+    fn test_default_stellar_node_spec_enables_network_policy() {
+        let spec = StellarNodeSpec::default();
+        let policy = spec
+            .network_policy
+            .expect("default StellarNodeSpec should include network_policy");
+
+        assert!(policy.enabled, "default network_policy should be enabled");
+    }
+
     fn valid_soroban_spec() -> StellarNodeSpec {
         StellarNodeSpec {
             node_type: NodeType::SorobanRpc,
@@ -179,7 +189,9 @@ mod stellar_node_spec_validation {
         }
     }
 
-    #[allow(dead_code)]
+    // Test-only helper constructors. The compiler warns these as dead code
+    // because test modules aren't fully linked; the suppression is intentional.
+    #[allow(dead_code)] // test helper — used by test cases in this module
     fn default_resources() -> ResourceRequirements {
         ResourceRequirements {
             requests: ResourceSpec {
@@ -193,7 +205,7 @@ mod stellar_node_spec_validation {
         }
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code)] // test helper — used by test cases in this module
     fn default_storage() -> StorageConfig {
         StorageConfig {
             storage_class: "standard".to_string(),
@@ -1110,6 +1122,7 @@ mod stellar_node_spec_validation {
             min_replicas: 1,
             max_replicas: 10,
             target_cpu_utilization_percentage: None,
+            target_memory_utilization_percentage: None,
             custom_metrics: vec![],
             behavior: None,
             predictive_scaling: None,
@@ -1145,6 +1158,7 @@ mod stellar_node_spec_validation {
             min_replicas: 1,
             max_replicas: 10,
             target_cpu_utilization_percentage: None,
+            target_memory_utilization_percentage: None,
             custom_metrics: vec![],
             behavior: None,
             predictive_scaling: None,
@@ -1180,6 +1194,7 @@ mod stellar_node_spec_validation {
             min_replicas: 1,
             max_replicas: 10,
             target_cpu_utilization_percentage: None,
+            target_memory_utilization_percentage: None,
             custom_metrics: vec![],
             behavior: None,
             predictive_scaling: None,
@@ -1215,6 +1230,7 @@ mod stellar_node_spec_validation {
             min_replicas: 1,
             max_replicas: 10,
             target_cpu_utilization_percentage: None,
+            target_memory_utilization_percentage: None,
             custom_metrics: vec![],
             behavior: None,
             predictive_scaling: None,
@@ -1241,6 +1257,7 @@ mod stellar_node_spec_validation {
             min_replicas: 1,
             max_replicas: 10,
             target_cpu_utilization_percentage: None,
+            target_memory_utilization_percentage: None,
             custom_metrics: vec![],
             behavior: None,
             predictive_scaling: None,
@@ -1278,6 +1295,7 @@ mod stellar_node_spec_validation {
             min_replicas: 1,
             max_replicas: 10,
             target_cpu_utilization_percentage: None,
+            target_memory_utilization_percentage: None,
             custom_metrics: vec![],
             behavior: None,
             predictive_scaling: None,
@@ -1313,6 +1331,7 @@ mod stellar_node_spec_validation {
             min_replicas: 2,
             max_replicas: 10,
             target_cpu_utilization_percentage: None,
+            target_memory_utilization_percentage: None,
             custom_metrics: vec![],
             behavior: None,
             predictive_scaling: None,

@@ -4,10 +4,12 @@
 //! command-line interface, such as running the operator, the simulator,
 //! or generating runbooks.
 
+pub mod backup;
 pub mod benchmark;
 pub mod check_crd;
 pub mod doctor;
 pub mod export_compliance;
+pub mod health_check;
 pub mod info;
 pub mod operator;
 pub mod runbook;

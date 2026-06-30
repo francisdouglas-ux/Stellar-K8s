@@ -3,6 +3,7 @@
 //! This module uses `clap` to define the CLI structure, including all
 //! subcommands, arguments, and environment variable mappings.
 
+use crate::commands::backup::{BackupArgs, CleanupArgs, ListArgs, RestoreArgs};
 use clap::{Parser, Subcommand};
 use stellar_k8s::controller::archive_prune::PruneArchiveArgs;
 use stellar_k8s::controller::diff::DiffArgs;
@@ -69,6 +70,8 @@ pub enum Commands {
     CheckCrd,
     /// Verify local CLI tooling, Kubernetes context, and operator permissions
     Doctor(DoctorArgs),
+    /// Run offline repository validation checks
+    HealthCheck(crate::commands::health_check::HealthCheckArgs),
     /// Prune old history archive checkpoints
     PruneArchive(PruneArchiveArgs),
     /// Show difference between desired and live cluster state
@@ -98,6 +101,23 @@ pub enum Commands {
     BenchmarkCompare(stellar_k8s::benchmark_compare::BenchmarkCompareArgs),
     /// Export operator audit log and config as a signed compliance report
     ExportCompliance(ExportComplianceArgs),
+    /// Backup commands for Stellar node data
+    Backup {
+        #[command(subcommand)]
+        command: BackupCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum BackupCommands {
+    /// Create a backup of Stellar node data
+    Create(BackupArgs),
+    /// Restore a backup
+    Restore(RestoreArgs),
+    /// List available backups
+    List(ListArgs),
+    /// Cleanup old backups
+    Cleanup(CleanupArgs),
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]
